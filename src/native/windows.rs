@@ -1,6 +1,6 @@
 use crate::{
     conf::{Conf, Icon},
-    event::{KeyMods, MouseButton},
+    event::{KeyMods, MouseButton,TouchPhase},
     native::NativeDisplayData,
     Context, CursorIcon, EventHandler, GraphicsContext,
 };
@@ -315,6 +315,26 @@ unsafe extern "system" fn win32_wndproc(
                     event_handler.window_restored_event(context.with_display(display));
                 }
             }
+        }
+        WM_TOUCH => {
+            let num_points =  LOWORD(wparam as _) as u32;
+            let mut points: Vec<TOUCHINPUT> = vec![std::mem::zeroed(); num_points as usize];
+            if GetTouchInputInfo(wparam as _, num_points, points.as_mut_ptr(), std::mem::size_of::<TOUCHINPUT>() as i32) != 0 {
+                for point in points {
+                    // 处理每个触控点
+                    let phase = match point.dwFlags {
+                        TOUCHEVENTF_MOVE => TouchPhase::Moved,
+                        TOUCHEVENTF_UP => TouchPhase::Ended,
+                        TOUCHEVENTF_DOWN => TouchPhase::Started,
+                        // => TouchPhase::Cancelled,
+                        x => panic!("Unsupported touch phase: {}", x),
+                    };
+                
+                    event_handler.touch_event(context.with_display(display), phase, point.dwID as _, point.x as _, point.y as _, point.dwTime as _);
+                }
+                
+            }
+            
         }
         WM_SETCURSOR => {
             if display.user_cursor {

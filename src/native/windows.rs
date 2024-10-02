@@ -317,20 +317,24 @@ unsafe extern "system" fn win32_wndproc(
             }
         }
         WM_TOUCH => {
+
+            
             let num_points =  LOWORD(wparam as _) as u32;
             let mut points: Vec<TOUCHINPUT> = vec![std::mem::zeroed(); num_points as usize];
-            if GetTouchInputInfo(wparam as _, num_points, points.as_mut_ptr(), std::mem::size_of::<TOUCHINPUT>() as i32) != 0 {
+            
+            if GetTouchInputInfo(lparam as HTOUCHINPUT, num_points, points.as_mut_ptr(), std::mem::size_of::<TOUCHINPUT>() as i32) ==1 {
+
                 for point in points {
-                    // 处理每个触控点
-                    let phase = match point.dwFlags {
-                        TOUCHEVENTF_MOVE => TouchPhase::Moved,
-                        TOUCHEVENTF_UP => TouchPhase::Ended,
-                        TOUCHEVENTF_DOWN => TouchPhase::Started,
+                   
+                    let phase = match (point.dwFlags & 0x07) {
+                    TOUCHEVENTF_MOVE => TouchPhase::Moved,
+                    TOUCHEVENTF_UP => TouchPhase::Ended,
+                    TOUCHEVENTF_DOWN => TouchPhase::Started,
                         // => TouchPhase::Cancelled,
-                        x => panic!("Unsupported touch phase: {}", x),
-                    };
-                
-                    event_handler.touch_event(context.with_display(display), phase, point.dwID as _, point.x as _, point.y as _, point.dwTime as _);
+                    x => panic!("Unsupported touch phase: {}", x),
+                };
+                    
+                    event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, point.x as _, point.y as _,point.dwTime as f64);
                 }
                 
             }
@@ -703,6 +707,7 @@ unsafe fn create_msg_window() -> (HWND, HDC) {
         msg_hwnd.is_null() == false,
         "Win32: failed to create helper window!"
     );
+    RegisterTouchWindow(msg_hwnd,TWF_WANTPALM );
     ShowWindow(msg_hwnd, SW_HIDE);
     let mut msg = std::mem::zeroed();
     while PeekMessageW(&mut msg as _, msg_hwnd, 0, 0, PM_REMOVE) != 0 {

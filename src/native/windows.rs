@@ -334,7 +334,7 @@ unsafe extern "system" fn win32_wndproc(
                     x => panic!("Unsupported touch phase: {}", x),
                 };
                     
-                    event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, (point.x/100) as _, (point.y/100) as _,point.dwTime as f64);
+                    event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, (point.x/100) as _, (point.y/100) as _,point.dwTime as f64/1000);
                 }
                 
             }

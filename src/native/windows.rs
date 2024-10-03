@@ -674,7 +674,7 @@ unsafe fn create_window(
         GetModuleHandleW(NULL as _), // hInstance
         NULL as _,                   // lparam
     );
-    RegisterTouchWindow(msg_hwnd,TWF_WANTPALM );
+    RegisterTouchWindow(hwnd,TWF_WANTPALM );
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);

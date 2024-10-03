@@ -674,13 +674,13 @@ unsafe fn create_window(
         GetModuleHandleW(NULL as _), // hInstance
         NULL as _,                   // lparam
     );
+    RegisterTouchWindow(msg_hwnd,TWF_WANTPALM );
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);
     }
     let dc = GetDC(hwnd);
     assert!(dc.is_null() == false);
-
     (hwnd, dc)
 }
 
@@ -707,7 +707,6 @@ unsafe fn create_msg_window() -> (HWND, HDC) {
         msg_hwnd.is_null() == false,
         "Win32: failed to create helper window!"
     );
-    RegisterTouchWindow(msg_hwnd,TWF_WANTPALM );
     ShowWindow(msg_hwnd, SW_HIDE);
     let mut msg = std::mem::zeroed();
     while PeekMessageW(&mut msg as _, msg_hwnd, 0, 0, PM_REMOVE) != 0 {

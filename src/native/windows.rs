@@ -230,6 +230,19 @@ unsafe fn update_clip_rect(hwnd: HWND) {
     ClipCursor(&mut rect as *mut _ as _);
 }
 
+unsafe fn convert_to_absolute(hwnd: HWND, x:i32, y:i32) -> (f32, f32){
+    let mut rect: RECT = std::mem::zeroed();
+    GetClientRect(hwnd, &mut rect as *mut _ as _);
+    let mut upper_left = POINT {
+        x: rect.left,
+        y: rect.top,
+    };
+    ClientToScreen(hwnd, &mut upper_left as *mut _ as _);
+    let x = x / 100 - upper_left.x;
+    let y = y / 100 - upper_left.y;
+    (x as f32, y as f32)
+}
+
 unsafe fn key_mods() -> KeyMods {
     let mut mods = KeyMods::default();
 
@@ -317,8 +330,6 @@ unsafe extern "system" fn win32_wndproc(
             }
         }
         WM_TOUCH => {
-
-            
             let num_points =  LOWORD(wparam as _) as u32;
             let mut points: Vec<TOUCHINPUT> = vec![std::mem::zeroed(); num_points as usize];
             
@@ -333,8 +344,8 @@ unsafe extern "system" fn win32_wndproc(
                         // => TouchPhase::Cancelled,
                     x => panic!("Unsupported touch phase: {}", x),
                 };
-                    
-                    event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, (point.x/100) as _, (point.y/100) as _,point.dwTime as f64/1000.);
+                let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
+                    event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, x as _, y as _,point.dwTime as f64/1000.);
                 }
                 
             }
@@ -454,12 +465,16 @@ unsafe extern "system" fn win32_wndproc(
                 panic!("failed to retrieve raw input data");
             }
 
-            if data.data.mouse().usFlags & MOUSE_MOVE_ABSOLUTE == 1 {
-                unimplemented!("Got MOUSE_MOVE_ABSOLUTE on WM_INPUT, related issue: https://github.com/not-fl3/miniquad/issues/165");
+            let mut dx = data.data.mouse().lLastX as f32 * display.mouse_scale;
+            let mut dy = data.data.mouse().lLastY as f32 * display.mouse_scale;
+            // convert from normalised absolute coordinates
+            if (data.data.mouse().usFlags & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_ABSOLUTE {
+                let (width, height) = context.screen_size();
+                dx = dx / 65535.0 * width;
+                dy = dy / 65535.0 * height;
             }
 
-            let dx = data.data.mouse().lLastX as f32 * display.mouse_scale;
-            let dy = data.data.mouse().lLastY as f32 * display.mouse_scale;
+
             event_handler.raw_mouse_motion(context.with_display(display), dx as f32, dy as f32);
 
             update_clip_rect(hwnd);
@@ -674,6 +689,7 @@ unsafe fn create_window(
         GetModuleHandleW(NULL as _), // hInstance
         NULL as _,                   // lparam
     );
+    RegisterTouchWindow(hwnd,TWF_FINETOUCH );
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);
@@ -707,7 +723,7 @@ unsafe fn create_msg_window() -> (HWND, HDC) {
         msg_hwnd.is_null() == false,
         "Win32: failed to create helper window!"
     );
-    RegisterTouchWindow(msg_hwnd,TWF_WANTPALM );
+
     ShowWindow(msg_hwnd, SW_HIDE);
     let mut msg = std::mem::zeroed();
     while PeekMessageW(&mut msg as _, msg_hwnd, 0, 0, PM_REMOVE) != 0 {

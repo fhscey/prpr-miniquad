@@ -253,7 +253,7 @@ fn convert_to_unixtime(dwtime: u32) -> f64 {
     let event_time = startup_time + Duration::from_millis(dwtime as u64);
     let unix_timestamp = event_time.duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
-        .as_millis();
+        .as_nanos();
     unix_timestamp as f64
 }
 
@@ -359,7 +359,7 @@ unsafe extern "system" fn win32_wndproc(
                     x => panic!("Unsupported touch phase: {}", x),
                 };
                 let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
-                let time = convert_to_unixtime(point.dwTime) /1000.;
+                let time = convert_to_unixtime(point.dwTime) /1000000000.;
                     event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, x as _, y as _,time);
                 }
                 

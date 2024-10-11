@@ -348,7 +348,7 @@ unsafe extern "system" fn win32_wndproc(
                     x => panic!("Unsupported touch phase: {}", x),
                 };
                 let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
-                let time = point.dwTime as f64 /1000.;
+                let time = unsafe { winapi::um::sysinfoapi::GetTickCount64() } as f64 / 1000.;   
                     event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, x as _, y as _,time);
                 }
                 

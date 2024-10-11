@@ -246,6 +246,13 @@ unsafe fn convert_to_absolute(hwnd: HWND, x:i32, y:i32) -> (f32, f32){
     (x as f32, y as f32)
 }
 
+fn get_uptime() -> f64 {
+    let start = SystemTime::UNIX_EPOCH;
+    let now = SystemTime::now();
+    let duration = now.duration_since(start).expect("Time went backwards");
+    duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
+}
+
 unsafe fn key_mods() -> KeyMods {
     let mut mods = KeyMods::default();
 
@@ -348,7 +355,7 @@ unsafe extern "system" fn win32_wndproc(
                     x => panic!("Unsupported touch phase: {}", x),
                 };
                 let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
-                let time = unsafe { winapi::um::sysinfoapi::GetTickCount64() } as f64 / 1000.;   
+                let time = get_uptime();   
                     event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, x as _, y as _,time);
                 }
                 

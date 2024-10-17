@@ -346,7 +346,8 @@ unsafe extern "system" fn win32_wndproc(
             if GetTouchInputInfo(lparam as HTOUCHINPUT, num_points, points.as_mut_ptr(), std::mem::size_of::<TOUCHINPUT>() as i32) ==1 {
 
                 for point in points {
-                   
+                    let id = point.dwID as u64;
+                    if id != u64::MAX && id != u64::MAX-2 {
                     let phase = match (point.dwFlags & 0x07) {
                     TOUCHEVENTF_MOVE => TouchPhase::Moved,
                     TOUCHEVENTF_UP => TouchPhase::Ended,
@@ -354,13 +355,11 @@ unsafe extern "system" fn win32_wndproc(
                         // => TouchPhase::Cancelled,
                     x => panic!("Unsupported touch phase: {}", x),
                 };
-                let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
-                let time = get_uptime();   
-                    event_handler.touch_event(context.with_display(display),phase, point.dwID as u64, x as _, y as _,time);
+                    let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
+                    let time = get_uptime();
+                    event_handler.touch_event(context.with_display(display), phase, id, x, y, time);}
                 }
-                
             }
-            
         }
         WM_SETCURSOR => {
             if display.user_cursor {

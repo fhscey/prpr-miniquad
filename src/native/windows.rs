@@ -377,6 +377,7 @@ unsafe extern "system" fn win32_wndproc(
                     event_handler.touch_event(context.with_display(display), phase, id, x, y, time);
                 }
             }
+            CloseTouchInputHandle(lparam as HTOUCHINPUT);
         }
         WM_SETCURSOR => {
             if display.user_cursor {

@@ -5,7 +5,11 @@ use crate::{
     Context, CursorIcon, EventHandler, GraphicsContext,
 };
 
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::{
+    ffi::CString,
+    time::{SystemTime, UNIX_EPOCH, Duration}
+};
+
 
 use winapi::{
     shared::{
@@ -19,6 +23,7 @@ use winapi::{
         shellscalingapi::*,
         wingdi::*,
         winuser::*,
+        winbase::{GlobalAddAtomW, GlobalDeleteAtom},
         sysinfoapi::GetTickCount64,
     },
 };
@@ -253,6 +258,19 @@ fn get_uptime() -> f64 {
     duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
 }
 
+fn disablePressAndHold(hwnd: HWND){
+    let tablet_atom = CString::new("").unwrap();
+    let atom_id = unsafe {
+        GlobalAddAtomW(tablet_atom.as_ptr() as _)
+    }; 
+    if atom_id != 0 {
+        unsafe {
+            SetPropW(hwnd, tablet_atom.as_ptr() as _, 1 as _);
+            GlobalDeleteAtom(atom_id);
+        }
+    }
+}
+
 unsafe fn key_mods() -> KeyMods {
     let mut mods = KeyMods::default();
 
@@ -347,7 +365,6 @@ unsafe extern "system" fn win32_wndproc(
 
                 for point in points {
                     let id = point.dwID as u64;
-                    if id != u64::MAX && id != u64::MAX-2 {
                     let phase = match (point.dwFlags & 0x07) {
                     TOUCHEVENTF_MOVE => TouchPhase::Moved,
                     TOUCHEVENTF_UP => TouchPhase::Ended,
@@ -357,7 +374,7 @@ unsafe extern "system" fn win32_wndproc(
                 };
                     let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
                     let time = get_uptime();
-                    event_handler.touch_event(context.with_display(display), phase, id, x, y, time);}
+                    event_handler.touch_event(context.with_display(display), phase, id, x, y, time);
                 }
             }
         }
@@ -700,6 +717,7 @@ unsafe fn create_window(
         NULL as _,                   // lparam
     );
     RegisterTouchWindow(hwnd,TWF_FINETOUCH );
+    disablePressAndHold(hwnd);
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);

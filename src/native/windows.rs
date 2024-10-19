@@ -7,7 +7,7 @@ use crate::{
 
 use std::{
     ffi::CString,
-    time::{SystemTime, UNIX_EPOCH, Duration}
+    time::{SystemTime}
 };
 
 
@@ -364,8 +364,8 @@ unsafe extern "system" fn win32_wndproc(
             if GetTouchInputInfo(lparam as HTOUCHINPUT, num_points, points.as_mut_ptr(), std::mem::size_of::<TOUCHINPUT>() as i32) ==1 {
 
                 for point in points {
-                    let id = point.dwID as u64;
-                    let phase = match (point.dwFlags & 0x07) {
+                    let id = point.dwID as u64 % 10;
+                    let phase = match point.dwFlags & 0x07 {
                     TOUCHEVENTF_MOVE => TouchPhase::Moved,
                     TOUCHEVENTF_UP => TouchPhase::Ended,
                     TOUCHEVENTF_DOWN => TouchPhase::Started,

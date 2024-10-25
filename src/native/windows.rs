@@ -144,7 +144,7 @@ impl crate::native::NativeDisplay for Display {
         };
     }
 
-    fn set_fullscreen(&mut self, fullscreen: bool) {
+    fn set_fullscreen(&mut self, fullscreen: bool, width: i32, height: i32) {
         self.fullscreen = fullscreen as _;
 
         let win_style: DWORD = get_win_style(self.fullscreen, self.window_resizable);
@@ -169,8 +169,8 @@ impl crate::native::NativeDisplay for Display {
                     0,
                     0,
                     // this is probably not correct: with high dpi content_width and window_width are actually different..
-                    self.display_data.screen_width,
-                    self.display_data.screen_height,
+                    width,
+                    height,
                     SWP_FRAMECHANGED,
                 );
             }

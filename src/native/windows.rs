@@ -258,19 +258,6 @@ fn get_uptime() -> f64 {
     duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
 }
 
-fn disablePressAndHold(hwnd: HWND){
-    let tablet_atom = CString::new("").unwrap();
-    let atom_id = unsafe {
-        GlobalAddAtomW(tablet_atom.as_ptr() as _)
-    }; 
-    if atom_id != 0 {
-        unsafe {
-            SetPropW(hwnd, tablet_atom.as_ptr() as _, 1 as _);
-            GlobalDeleteAtom(atom_id);
-        }
-    }
-}
-
 unsafe fn key_mods() -> KeyMods {
     let mut mods = KeyMods::default();
 
@@ -374,7 +361,9 @@ unsafe extern "system" fn win32_wndproc(
                 };
                     let (x, y) = convert_to_absolute(hwnd, point.x, point.y) ;
                     let time = get_uptime();
-                    event_handler.touch_event(context.with_display(display), phase, id, x, y, time);
+                    if id != u64::MAX && id != u64::MAX-2 {
+                        event_handler.touch_event(context.with_display(display), phase, id, x, y, time);
+                    }
                 }
             }
             CloseTouchInputHandle(lparam as HTOUCHINPUT);
@@ -718,7 +707,6 @@ unsafe fn create_window(
         NULL as _,                   // lparam
     );
     RegisterTouchWindow(hwnd,TWF_FINETOUCH );
-    disablePressAndHold(hwnd);
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);

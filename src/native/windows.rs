@@ -24,7 +24,6 @@ use winapi::{
         wingdi::*,
         winuser::*,
         winbase::{GlobalAddAtomW, GlobalDeleteAtom},
-        sysinfoapi::GetTickCount64,
     },
 };
 
@@ -34,6 +33,8 @@ mod libopengl32;
 mod wgl;
 
 use libopengl32::LibOpengl32;
+
+use super::NativeDisplay;
 
 pub(crate) struct Display {
     fullscreen: bool,
@@ -144,7 +145,7 @@ impl crate::native::NativeDisplay for Display {
         };
     }
 
-    fn set_fullscreen(&mut self, fullscreen: bool, width: i32, height: i32) {
+    fn set_fullscreen(&mut self, fullscreen: bool) {
         self.fullscreen = fullscreen as _;
 
         let win_style: DWORD = get_win_style(self.fullscreen, self.window_resizable);
@@ -160,7 +161,7 @@ impl crate::native::NativeDisplay for Display {
                     0,
                     GetSystemMetrics(SM_CXSCREEN),
                     GetSystemMetrics(SM_CYSCREEN),
-                    SWP_FRAMECHANGED,
+                    SWP_FRAMECHANGED | SWP_DEFERERASE | SWP_DRAWFRAME,
                 );
             } else {
                 SetWindowPos(
@@ -169,8 +170,8 @@ impl crate::native::NativeDisplay for Display {
                     0,
                     0,
                     // this is probably not correct: with high dpi content_width and window_width are actually different..
-                    width,
-                    height,
+                    self.display_data.screen_width,
+                    self.display_data.screen_height,
                     SWP_FRAMECHANGED,
                 );
             }
@@ -210,32 +211,36 @@ fn get_win_style(is_fullscreen: bool, is_resizable: bool) -> DWORD {
     }
 }
 
-unsafe fn update_clip_rect(hwnd: HWND) {
+unsafe fn update_clip_rect(hwnd: HWND, display: &mut Display) {
     // Retrieve the screen coordinates of the client area,
     // and convert them into client coordinates.
     let mut rect: RECT = std::mem::zeroed();
 
-    GetClientRect(hwnd, &mut rect as *mut _ as _);
-    let mut upper_left = POINT {
-        x: rect.left,
-        y: rect.top,
-    };
-    let mut lower_right = POINT {
-        x: rect.right,
-        y: rect.bottom,
-    };
+    if display.fullscreen {
+        display.set_fullscreen(true);
+    }else {
+        GetClientRect(hwnd, &mut rect as *mut _ as _);
+        let mut upper_left = POINT {
+            x: rect.left,
+            y: rect.top,
+        };
+        let mut lower_right = POINT {
+            x: rect.right,
+            y: rect.bottom,
+        };
 
-    ClientToScreen(hwnd, &mut upper_left as *mut _ as _);
-    ClientToScreen(hwnd, &mut lower_right as *mut _ as _);
+        ClientToScreen(hwnd, &mut upper_left as *mut _ as _);
+        ClientToScreen(hwnd, &mut lower_right as *mut _ as _);
 
-    SetRect(
-        &mut rect as *mut _ as _,
-        upper_left.x,
-        upper_left.y,
-        lower_right.x,
-        lower_right.y,
-    );
-    ClipCursor(&mut rect as *mut _ as _);
+        SetRect(
+            &mut rect as *mut _ as _,
+            upper_left.x,
+            upper_left.y,
+            lower_right.x,
+            lower_right.y,
+        );
+        ClipCursor(&mut rect as *mut _ as _);
+    }
 }
 
 unsafe fn convert_to_absolute(hwnd: HWND, x:i32, y:i32) -> (f32, f32){
@@ -344,7 +349,7 @@ unsafe extern "system" fn win32_wndproc(
         }
         WM_SIZE => {
             if display.cursor_grabbed {
-                update_clip_rect(hwnd);
+                update_clip_rect(hwnd, display);
             }
 
             let iconified = wparam == SIZE_MINIMIZED;
@@ -476,7 +481,7 @@ unsafe extern "system" fn win32_wndproc(
         }
 
         WM_MOVE if display.cursor_grabbed => {
-            update_clip_rect(hwnd);
+            update_clip_rect(hwnd, display);
         }
 
         WM_INPUT => {
@@ -505,7 +510,7 @@ unsafe extern "system" fn win32_wndproc(
 
             event_handler.raw_mouse_motion(context.with_display(display), dx as f32, dy as f32);
 
-            update_clip_rect(hwnd);
+            update_clip_rect(hwnd, display);
         }
 
         WM_MOUSELEAVE => {

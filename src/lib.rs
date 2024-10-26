@@ -125,8 +125,8 @@ impl Context {
         self.display_mut().set_window_size(new_width, new_height);
     }
 
-    pub fn set_fullscreen(&mut self, fullscreen: bool, width: i32, height: i32) {
-        self.display_mut().set_fullscreen(fullscreen, width, height);
+    pub fn set_fullscreen(&mut self, fullscreen: bool) {
+        self.display_mut().set_fullscreen(fullscreen);
     }
 
     /// Get current OS clipboard value

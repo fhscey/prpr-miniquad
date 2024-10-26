@@ -6,8 +6,7 @@ use crate::{
 };
 
 use std::{
-    ffi::CString,
-    time::{SystemTime}
+    ffi::CString, ptr, time::SystemTime
 };
 
 
@@ -27,6 +26,11 @@ use winapi::{
     },
 };
 
+use windows::Win32::{
+    UI::Input::Touch::{SetGestureConfig, GESTURECONFIG, GESTURECONFIG_ID},
+    Foundation::HWND as fuck,
+};
+
 mod clipboard;
 mod keycodes;
 mod libopengl32;
@@ -34,10 +38,9 @@ mod wgl;
 
 use libopengl32::LibOpengl32;
 
-use super::NativeDisplay;
-
 pub(crate) struct Display {
     fullscreen: bool,
+    set_fullscreen: bool,
     dpi_aware: bool,
     window_resizable: bool,
     cursor_grabbed: bool,
@@ -144,16 +147,12 @@ impl crate::native::NativeDisplay for Display {
             )
         };
     }
-
     fn set_fullscreen(&mut self, fullscreen: bool) {
-        self.fullscreen = fullscreen as _;
-
-        let win_style: DWORD = get_win_style(self.fullscreen, self.window_resizable);
-
-        unsafe {
-            SetWindowLongPtrA(self.wnd, GWL_STYLE, win_style as _);
-
-            if self.fullscreen {
+        self.set_fullscreen = fullscreen;
+        unsafe{
+            let win_style: DWORD = get_win_style(self.set_fullscreen, !self.set_fullscreen);
+            if self.set_fullscreen && !self.fullscreen {
+                SetWindowLongPtrA(self.wnd, GWL_STYLE, win_style as _);
                 SetWindowPos(
                     self.wnd,
                     HWND_TOP,
@@ -163,10 +162,23 @@ impl crate::native::NativeDisplay for Display {
                     GetSystemMetrics(SM_CYSCREEN),
                     SWP_FRAMECHANGED | SWP_DEFERERASE | SWP_DRAWFRAME,
                 );
+                self.fullscreen = true;
+                ShowWindow(self.wnd, SW_SHOW);
+            } else if !self.set_fullscreen && self.fullscreen {
+                SetWindowLongPtrA(self.wnd, GWL_STYLE, win_style as _);
+                SetWindowPos(
+                    self.wnd,
+                    ptr::null_mut(),
+                    0,
+                    0,
+                    973,
+                    608,
+                    SWP_FRAMECHANGED | SWP_DEFERERASE | SWP_DRAWFRAME,
+                );
+                self.fullscreen = false;
+                ShowWindow(self.wnd, SW_SHOW);
             }
-
-            ShowWindow(self.wnd, SW_SHOW);
-        };
+        }
     }
     fn clipboard_get(&mut self) -> Option<String> {
         unsafe { clipboard::get_clipboard_text() }
@@ -200,36 +212,32 @@ fn get_win_style(is_fullscreen: bool, is_resizable: bool) -> DWORD {
     }
 }
 
-unsafe fn update_clip_rect(hwnd: HWND, display: &mut Display) {
+unsafe fn update_clip_rect(hwnd: HWND) {
     // Retrieve the screen coordinates of the client area,
     // and convert them into client coordinates.
     let mut rect: RECT = std::mem::zeroed();
 
-    if display.fullscreen {
-        display.set_fullscreen(true);
-    }else {
-        GetClientRect(hwnd, &mut rect as *mut _ as _);
-        let mut upper_left = POINT {
-            x: rect.left,
-            y: rect.top,
-        };
-        let mut lower_right = POINT {
-            x: rect.right,
-            y: rect.bottom,
-        };
+    GetClientRect(hwnd, &mut rect as *mut _ as _);
+    let mut upper_left = POINT {
+        x: rect.left,
+        y: rect.top,
+    };
+    let mut lower_right = POINT {
+        x: rect.right,
+        y: rect.bottom,
+    };
 
-        ClientToScreen(hwnd, &mut upper_left as *mut _ as _);
-        ClientToScreen(hwnd, &mut lower_right as *mut _ as _);
+    ClientToScreen(hwnd, &mut upper_left as *mut _ as _);
+    ClientToScreen(hwnd, &mut lower_right as *mut _ as _);
 
-        SetRect(
-            &mut rect as *mut _ as _,
-            upper_left.x,
-            upper_left.y,
-            lower_right.x,
-            lower_right.y,
-        );
-        ClipCursor(&mut rect as *mut _ as _);
-    }
+    SetRect(
+        &mut rect as *mut _ as _,
+        upper_left.x,
+        upper_left.y,
+        lower_right.x,
+        lower_right.y,
+    );
+    ClipCursor(&mut rect as *mut _ as _);
 }
 
 unsafe fn convert_to_absolute(hwnd: HWND, x:i32, y:i32) -> (f32, f32){
@@ -252,17 +260,11 @@ fn get_uptime() -> f64 {
     duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
 }
 
-fn disable_press_and_hold(hwnd: HWND){
-    let tablet_atom = CString::new("MicrosoftTabletPenServiceProperty").unwrap();
-    let atom_id = unsafe {
-        GlobalAddAtomW(tablet_atom.as_ptr() as _)
-    };
-    if atom_id != 0 {
-        unsafe {
-            SetPropW(hwnd, tablet_atom.as_ptr() as _, 1 as _);
-            GlobalDeleteAtom(atom_id);
-        }
-    }
+unsafe fn disable_all_gestures(hwnd: HWND){
+
+    let gesture_conf = [GESTURECONFIG {dwID: GESTURECONFIG_ID(0), dwWant: 0, dwBlock: 1}];
+    let hwnd = fuck(hwnd as *mut core::ffi::c_void);
+    SetGestureConfig(hwnd, 0,  &gesture_conf, std::mem::size_of::<GESTURECONFIG>() as _);
 }
 
 unsafe fn key_mods() -> KeyMods {
@@ -338,7 +340,7 @@ unsafe extern "system" fn win32_wndproc(
         }
         WM_SIZE => {
             if display.cursor_grabbed {
-                update_clip_rect(hwnd, display);
+                update_clip_rect(hwnd);
             }
 
             let iconified = wparam == SIZE_MINIMIZED;
@@ -470,7 +472,7 @@ unsafe extern "system" fn win32_wndproc(
         }
 
         WM_MOVE if display.cursor_grabbed => {
-            update_clip_rect(hwnd, display);
+            update_clip_rect(hwnd);
         }
 
         WM_INPUT => {
@@ -499,7 +501,7 @@ unsafe extern "system" fn win32_wndproc(
 
             event_handler.raw_mouse_motion(context.with_display(display), dx as f32, dy as f32);
 
-            update_clip_rect(hwnd, display);
+            update_clip_rect(hwnd);
         }
 
         WM_MOUSELEAVE => {
@@ -712,7 +714,7 @@ unsafe fn create_window(
         NULL as _,                   // lparam
     );
     RegisterTouchWindow(hwnd,TWF_FINETOUCH);
-    disable_press_and_hold(hwnd);
+    disable_all_gestures(hwnd);
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);
@@ -908,6 +910,7 @@ where
         let (msg_wnd, msg_dc) = create_msg_window();
         let mut display = Display {
             fullscreen: false,
+            set_fullscreen: false,
             dpi_aware: false,
             window_resizable: conf.window_resizable,
             cursor_grabbed: false,

@@ -6,7 +6,7 @@ use crate::{
 };
 
 use std::{
-    ffi::CString, ptr, time::SystemTime
+    ptr, time::SystemTime
 };
 
 
@@ -258,13 +258,6 @@ fn get_uptime() -> f64 {
     let now = SystemTime::now();
     let duration = now.duration_since(start).expect("Time went backwards");
     duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
-}
-
-unsafe fn disable_all_gestures(hwnd: HWND){
-
-    let gesture_conf = [GESTURECONFIG {dwID: GESTURECONFIG_ID(0), dwWant: 0, dwBlock: 1}];
-    let hwnd = fuck(hwnd as *mut core::ffi::c_void);
-    SetGestureConfig(hwnd, 0,  &gesture_conf, std::mem::size_of::<GESTURECONFIG>() as _);
 }
 
 unsafe fn key_mods() -> KeyMods {
@@ -714,7 +707,6 @@ unsafe fn create_window(
         NULL as _,                   // lparam
     );
     RegisterTouchWindow(hwnd,TWF_FINETOUCH);
-    disable_all_gestures(hwnd);
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);

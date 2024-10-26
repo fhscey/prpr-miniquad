@@ -252,8 +252,8 @@ fn get_uptime() -> f64 {
     duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
 }
 
-fn disablePressAndHold(hwnd: HWND){
-    let tablet_atom = CString::new("").unwrap();
+fn disable_press_and_hold(hwnd: HWND){
+    let tablet_atom = CString::new("MicrosoftTabletPenServiceProperty").unwrap();
     let atom_id = unsafe {
         GlobalAddAtomW(tablet_atom.as_ptr() as _)
     };
@@ -712,7 +712,7 @@ unsafe fn create_window(
         NULL as _,                   // lparam
     );
     RegisterTouchWindow(hwnd,TWF_FINETOUCH);
-    disablePressAndHold(hwnd);
+    disable_press_and_hold(hwnd);
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);

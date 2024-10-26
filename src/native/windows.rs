@@ -163,17 +163,6 @@ impl crate::native::NativeDisplay for Display {
                     GetSystemMetrics(SM_CYSCREEN),
                     SWP_FRAMECHANGED | SWP_DEFERERASE | SWP_DRAWFRAME,
                 );
-            } else {
-                SetWindowPos(
-                    self.wnd,
-                    HWND_TOP,
-                    0,
-                    0,
-                    // this is probably not correct: with high dpi content_width and window_width are actually different..
-                    self.display_data.screen_width,
-                    self.display_data.screen_height,
-                    SWP_FRAMECHANGED,
-                );
             }
 
             ShowWindow(self.wnd, SW_SHOW);

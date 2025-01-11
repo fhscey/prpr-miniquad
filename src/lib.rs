@@ -129,6 +129,11 @@ impl Context {
         self.display_mut().set_fullscreen(fullscreen);
     }
 
+    #[cfg(target_os = "windows")]
+    pub fn set_multitouch(&mut self, multitouch: bool) {
+        self.display_mut().set_multitouch(multitouch);
+    }
+
     /// Get current OS clipboard value
     pub fn clipboard_get(&mut self) -> Option<String> {
         self.display_mut().clipboard_get()

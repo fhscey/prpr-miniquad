@@ -1,9 +1,11 @@
 use crate::{
     conf::{Conf, Icon},
-    event::{KeyMods, MouseButton},
+    event::{KeyMods, MouseButton, TouchPhase},
     native::NativeDisplayData,
     Context, CursorIcon, EventHandler, GraphicsContext,
 };
+
+use std::{ptr, time::SystemTime};
 
 use winapi::{
     shared::{
@@ -28,6 +30,7 @@ mod wgl;
 use libopengl32::LibOpengl32;
 
 pub(crate) struct Display {
+    multitouch: bool,
     fullscreen: bool,
     dpi_aware: bool,
     window_resizable: bool,
@@ -135,16 +138,11 @@ impl crate::native::NativeDisplay for Display {
             )
         };
     }
-
     fn set_fullscreen(&mut self, fullscreen: bool) {
-        self.fullscreen = fullscreen as _;
-
-        let win_style: DWORD = get_win_style(self.fullscreen, self.window_resizable);
-
         unsafe {
-            SetWindowLongPtrA(self.wnd, GWL_STYLE, win_style as _);
-
-            if self.fullscreen {
+            let win_style: DWORD = get_win_style(fullscreen, !fullscreen);
+            if fullscreen && !self.fullscreen {
+                SetWindowLongPtrA(self.wnd, GWL_STYLE, win_style as _);
                 SetWindowPos(
                     self.wnd,
                     HWND_TOP,
@@ -152,23 +150,28 @@ impl crate::native::NativeDisplay for Display {
                     0,
                     GetSystemMetrics(SM_CXSCREEN),
                     GetSystemMetrics(SM_CYSCREEN),
-                    SWP_FRAMECHANGED,
+                    SWP_FRAMECHANGED | SWP_DEFERERASE | SWP_DRAWFRAME,
                 );
-            } else {
+                self.fullscreen = true;
+                ShowWindow(self.wnd, SW_SHOW);
+            } else if !fullscreen && self.fullscreen {
+                SetWindowLongPtrA(self.wnd, GWL_STYLE, win_style as _);
                 SetWindowPos(
                     self.wnd,
-                    HWND_TOP,
+                    ptr::null_mut(),
                     0,
                     0,
-                    // this is probably not correct: with high dpi content_width and window_width are actually different..
-                    self.display_data.screen_width,
-                    self.display_data.screen_height,
-                    SWP_FRAMECHANGED,
+                    973,
+                    608,
+                    SWP_FRAMECHANGED | SWP_DEFERERASE | SWP_DRAWFRAME,
                 );
+                self.fullscreen = false;
+                ShowWindow(self.wnd, SW_SHOW);
             }
-
-            ShowWindow(self.wnd, SW_SHOW);
-        };
+        }
+    }
+    fn set_multitouch(&mut self, multitouch: bool) {
+        self.multitouch = multitouch
     }
     fn clipboard_get(&mut self) -> Option<String> {
         unsafe { clipboard::get_clipboard_text() }
@@ -228,6 +231,26 @@ unsafe fn update_clip_rect(hwnd: HWND) {
         lower_right.y,
     );
     ClipCursor(&mut rect as *mut _ as _);
+}
+
+unsafe fn convert_to_absolute(hwnd: HWND, x: i32, y: i32) -> (f32, f32) {
+    let mut rect: RECT = std::mem::zeroed();
+    GetClientRect(hwnd, &mut rect as *mut _ as _);
+    let mut upper_left = POINT {
+        x: rect.left,
+        y: rect.top,
+    };
+    ClientToScreen(hwnd, &mut upper_left as *mut _ as _);
+    let x = x / 100 - upper_left.x;
+    let y = y / 100 - upper_left.y;
+    (x as f32, y as f32)
+}
+
+fn get_uptime() -> f64 {
+    let start = SystemTime::UNIX_EPOCH;
+    let now = SystemTime::now();
+    let duration = now.duration_since(start).expect("Time went backwards");
+    duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
 }
 
 unsafe fn key_mods() -> KeyMods {
@@ -316,6 +339,33 @@ unsafe extern "system" fn win32_wndproc(
                 }
             }
         }
+        WM_TOUCH if display.multitouch => {
+            let num_points = LOWORD(wparam as _) as u32;
+            let mut points: Vec<TOUCHINPUT> = vec![std::mem::zeroed(); num_points as usize];
+
+            if GetTouchInputInfo(
+                lparam as HTOUCHINPUT,
+                num_points,
+                points.as_mut_ptr(),
+                std::mem::size_of::<TOUCHINPUT>() as i32,
+            ) == 1
+            {
+                for point in points {
+                    let id = point.dwID as u64;
+                    let phase = match point.dwFlags & 0x07 {
+                        TOUCHEVENTF_MOVE => TouchPhase::Moved,
+                        TOUCHEVENTF_UP => TouchPhase::Ended,
+                        TOUCHEVENTF_DOWN => TouchPhase::Started,
+                        // => TouchPhase::Cancelled,
+                        x => panic!("Unsupported touch phase: {}", x),
+                    };
+                    let (x, y) = convert_to_absolute(hwnd, point.x, point.y);
+                    let time = get_uptime();
+                    event_handler.touch_event(context.with_display(display), phase, id, x, y, time);
+                }
+            }
+            CloseTouchInputHandle(lparam as HTOUCHINPUT);
+        }
         WM_SETCURSOR => {
             if display.user_cursor {
                 if LOWORD(lparam as _) == HTCLIENT as _ {
@@ -325,7 +375,7 @@ unsafe extern "system" fn win32_wndproc(
                 }
             }
         }
-        WM_LBUTTONDOWN => {
+        WM_LBUTTONDOWN if !display.multitouch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_down_event(
@@ -335,7 +385,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_RBUTTONDOWN => {
+        WM_RBUTTONDOWN if !display.multitouch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_down_event(
@@ -345,7 +395,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_MBUTTONDOWN => {
+        WM_MBUTTONDOWN if !display.multitouch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_down_event(
@@ -355,7 +405,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_LBUTTONUP => {
+        WM_LBUTTONUP if !display.multitouch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_up_event(
@@ -365,7 +415,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_RBUTTONUP => {
+        WM_RBUTTONUP if !display.multitouch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_up_event(
@@ -375,7 +425,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_MBUTTONUP => {
+        WM_MBUTTONUP if !display.multitouch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_up_event(
@@ -386,7 +436,7 @@ unsafe extern "system" fn win32_wndproc(
             );
         }
 
-        WM_MOUSEMOVE => {
+        WM_MOUSEMOVE if !display.multitouch => {
             display.mouse_x = GET_X_LPARAM(lparam) as f32 * display.mouse_scale;
             display.mouse_y = GET_Y_LPARAM(lparam) as f32 * display.mouse_scale;
 
@@ -430,12 +480,15 @@ unsafe extern "system" fn win32_wndproc(
                 panic!("failed to retrieve raw input data");
             }
 
-            if data.data.mouse().usFlags & MOUSE_MOVE_ABSOLUTE == 1 {
-                unimplemented!("Got MOUSE_MOVE_ABSOLUTE on WM_INPUT, related issue: https://github.com/not-fl3/miniquad/issues/165");
+            let mut dx = data.data.mouse().lLastX as f32 * display.mouse_scale;
+            let mut dy = data.data.mouse().lLastY as f32 * display.mouse_scale;
+            // convert from normalised absolute coordinates
+            if (data.data.mouse().usFlags & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_ABSOLUTE {
+                let (width, height) = context.screen_size();
+                dx = dx / 65535.0 * width;
+                dy = dy / 65535.0 * height;
             }
 
-            let dx = data.data.mouse().lLastX as f32 * display.mouse_scale;
-            let dy = data.data.mouse().lLastY as f32 * display.mouse_scale;
             event_handler.raw_mouse_motion(context.with_display(display), dx as f32, dy as f32);
 
             update_clip_rect(hwnd);
@@ -650,6 +703,7 @@ unsafe fn create_window(
         GetModuleHandleW(NULL as _), // hInstance
         NULL as _,                   // lparam
     );
+    RegisterTouchWindow(hwnd, TWF_FINETOUCH);
     assert!(hwnd.is_null() == false);
     if !headless {
         ShowWindow(hwnd, SW_SHOW);
@@ -683,6 +737,7 @@ unsafe fn create_msg_window() -> (HWND, HDC) {
         msg_hwnd.is_null() == false,
         "Win32: failed to create helper window!"
     );
+
     ShowWindow(msg_hwnd, SW_HIDE);
     let mut msg = std::mem::zeroed();
     while PeekMessageW(&mut msg as _, msg_hwnd, 0, 0, PM_REMOVE) != 0 {
@@ -843,6 +898,7 @@ where
 
         let (msg_wnd, msg_dc) = create_msg_window();
         let mut display = Display {
+            multitouch: false,
             fullscreen: false,
             dpi_aware: false,
             window_resizable: conf.window_resizable,

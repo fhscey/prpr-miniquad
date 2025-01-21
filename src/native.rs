@@ -38,7 +38,7 @@ pub trait NativeDisplay: std::any::Any {
     fn set_window_size(&mut self, _new_width: u32, _new_height: u32);
     fn set_fullscreen(&mut self, _fullscreen: bool);
     #[cfg(target_os = "windows")]
-    fn set_multitouch(&mut self, _multitouch: bool);
+    fn set_multitouch(&mut self, _multitouch: bool, _is_game_scene: bool);
     fn clipboard_get(&mut self) -> Option<String>;
     fn clipboard_set(&mut self, _data: &str);
     fn dropped_file_count(&mut self) -> usize {

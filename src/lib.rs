@@ -130,8 +130,8 @@ impl Context {
     }
 
     #[cfg(target_os = "windows")]
-    pub fn set_multitouch(&mut self, multitouch: bool) {
-        self.display_mut().set_multitouch(multitouch);
+    pub fn set_multitouch(&mut self, multitouch: bool, is_game_scene: bool) {
+        self.display_mut().set_multitouch(multitouch, is_game_scene);
     }
 
     /// Get current OS clipboard value

@@ -30,7 +30,7 @@ mod wgl;
 use libopengl32::LibOpengl32;
 
 pub(crate) struct Display {
-    multitouch: bool,
+    touch: bool,
     fullscreen: bool,
     dpi_aware: bool,
     window_resizable: bool,
@@ -170,8 +170,8 @@ impl crate::native::NativeDisplay for Display {
             }
         }
     }
-    fn set_multitouch(&mut self, multitouch: bool) {
-        self.multitouch = multitouch
+    fn set_multitouch(&mut self, multitouch: bool, is_game_scene: bool) {
+        self.touch = multitouch && is_game_scene
     }
     fn clipboard_get(&mut self) -> Option<String> {
         unsafe { clipboard::get_clipboard_text() }
@@ -339,7 +339,7 @@ unsafe extern "system" fn win32_wndproc(
                 }
             }
         }
-        WM_TOUCH if display.multitouch => {
+        WM_TOUCH if display.touch => {
             let num_points = LOWORD(wparam as _) as u32;
             let mut points: Vec<TOUCHINPUT> = vec![std::mem::zeroed(); num_points as usize];
 
@@ -375,7 +375,7 @@ unsafe extern "system" fn win32_wndproc(
                 }
             }
         }
-        WM_LBUTTONDOWN if !display.multitouch => {
+        WM_LBUTTONDOWN if !display.touch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_down_event(
@@ -385,7 +385,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_RBUTTONDOWN if !display.multitouch => {
+        WM_RBUTTONDOWN if !display.touch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_down_event(
@@ -395,7 +395,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_MBUTTONDOWN if !display.multitouch => {
+        WM_MBUTTONDOWN if !display.touch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_down_event(
@@ -405,7 +405,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_LBUTTONUP if !display.multitouch => {
+        WM_LBUTTONUP if !display.touch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_up_event(
@@ -415,7 +415,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_RBUTTONUP if !display.multitouch => {
+        WM_RBUTTONUP if !display.touch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_up_event(
@@ -425,7 +425,7 @@ unsafe extern "system" fn win32_wndproc(
                 mouse_y,
             );
         }
-        WM_MBUTTONUP if !display.multitouch => {
+        WM_MBUTTONUP if !display.touch => {
             let mouse_x = display.mouse_x;
             let mouse_y = display.mouse_y;
             event_handler.mouse_button_up_event(
@@ -436,7 +436,7 @@ unsafe extern "system" fn win32_wndproc(
             );
         }
 
-        WM_MOUSEMOVE if !display.multitouch => {
+        WM_MOUSEMOVE if !display.touch => {
             display.mouse_x = GET_X_LPARAM(lparam) as f32 * display.mouse_scale;
             display.mouse_y = GET_Y_LPARAM(lparam) as f32 * display.mouse_scale;
 
@@ -898,7 +898,7 @@ where
 
         let (msg_wnd, msg_dc) = create_msg_window();
         let mut display = Display {
-            multitouch: false,
+            touch: false,
             fullscreen: false,
             dpi_aware: false,
             window_resizable: conf.window_resizable,

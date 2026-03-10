@@ -5,7 +5,10 @@ use crate::{
     Context, CursorIcon, EventHandler, GraphicsContext,
 };
 
-use std::ptr::{self, null_mut};
+use std::{
+    ptr::{self, null_mut},
+    sync::atomic::AtomicU64,
+};
 
 use winapi::{
     shared::{
@@ -242,27 +245,34 @@ unsafe fn screen_to_client(hwnd: HWND, x: i32, y: i32) -> (f32, f32) {
     (x as f32, y as f32)
 }
 
-unsafe fn get_qpc_frequency() -> f64 {
-    use std::sync::OnceLock;
-    static FREQ: OnceLock<f64> = OnceLock::new();
+#[inline]
+fn get_qpc_frequency_inverse() -> f64 {
+    use std::sync::atomic::Ordering::Relaxed;
 
-    *FREQ.get_or_init(|| {
-        let mut freq_i64 = 0i64;
-        unsafe {
-            if QueryPerformanceFrequency(&mut freq_i64 as *mut i64 as *mut _) != 0 && freq_i64 > 0 {
-                freq_i64 as f64
-            } else {
-                panic!("Critical Error: The hardware or OS does not support QueryPerformanceFrequency.");
-            }
-        }
-    })
+    static FREQ_INV: AtomicU64 = AtomicU64::new(0);
+
+    let freq_inv = FREQ_INV.load(Relaxed);
+    if freq_inv != 0 {
+        return f64::from_bits(freq_inv);
+    }
+
+    let mut freq: i64 = 0;
+    let result = unsafe {
+        QueryPerformanceFrequency(&mut freq as *mut i64 as *mut _)
+    };
+    if result == 0 || freq == 0 {
+        panic!("Critical error: The hardware or OS does not support QueryPerformanceFrequency.");
+    }
+    let freq_inv = 1. / freq as f64;
+    FREQ_INV.store(f64::to_bits(freq_inv), Relaxed);
+    freq_inv
 }
 pub fn get_uptime() -> f64 {
     let mut counter_i64: i64 = 0;
     unsafe {
         QueryPerformanceCounter(&mut counter_i64 as *mut i64 as *mut _);
-        counter_i64 as f64 / (get_qpc_frequency() as f64)
     }
+    counter_i64 as f64 * get_qpc_frequency_inverse()
 }
 unsafe fn key_mods() -> KeyMods {
     let mut mods = KeyMods::default();

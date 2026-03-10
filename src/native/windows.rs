@@ -5,10 +5,7 @@ use crate::{
     Context, CursorIcon, EventHandler, GraphicsContext,
 };
 
-use std::{
-    ptr::{self, null_mut},
-    time::SystemTime,
-};
+use std::ptr::{self, null_mut};
 
 use winapi::{
     shared::{
@@ -18,6 +15,7 @@ use winapi::{
     },
     um::{
         libloaderapi::{FreeLibrary, GetModuleHandleW, GetProcAddress, LoadLibraryA},
+        profileapi::*,
         shellscalingapi::*,
         wingdi::*,
         winuser::*,
@@ -231,7 +229,7 @@ unsafe fn update_clip_rect(hwnd: HWND) {
     ClipCursor(&mut rect as *mut _ as _);
 }
 
-unsafe fn convert_to_absolute(hwnd: HWND, x: i32, y: i32) -> (f32, f32) {
+unsafe fn screen_to_client(hwnd: HWND, x: i32, y: i32) -> (f32, f32) {
     let mut rect: RECT = std::mem::zeroed();
     GetClientRect(hwnd, &mut rect as *mut _ as _);
     let mut upper_left = POINT {
@@ -244,13 +242,28 @@ unsafe fn convert_to_absolute(hwnd: HWND, x: i32, y: i32) -> (f32, f32) {
     (x as f32, y as f32)
 }
 
-fn get_uptime() -> f64 {
-    let start = SystemTime::UNIX_EPOCH;
-    let now = SystemTime::now();
-    let duration = now.duration_since(start).expect("Time went backwards");
-    duration.as_secs() as f64 + duration.subsec_nanos() as f64 * 1e-9
-}
+unsafe fn get_qpc_frequency() -> f64 {
+    use std::sync::OnceLock;
+    static FREQ: OnceLock<f64> = OnceLock::new();
 
+    *FREQ.get_or_init(|| {
+        let mut freq_i64 = 0i64;
+        unsafe {
+            if QueryPerformanceFrequency(&mut freq_i64 as *mut i64 as *mut _) != 0 && freq_i64 > 0 {
+                freq_i64 as f64
+            } else {
+                panic!("Critical Error: The hardware or OS does not support QueryPerformanceFrequency.");
+            }
+        }
+    })
+}
+pub fn get_uptime() -> f64 {
+    let mut counter_i64: i64 = 0;
+    unsafe {
+        QueryPerformanceCounter(&mut counter_i64 as *mut i64 as *mut _);
+        counter_i64 as f64 / (get_qpc_frequency() as f64)
+    }
+}
 unsafe fn key_mods() -> KeyMods {
     let mut mods = KeyMods::default();
 
@@ -362,11 +375,11 @@ unsafe extern "system" fn win32_wndproc(
                 return 0;
             }
             pointer_infos.set_len(pointer_info_count);
-            let time = get_uptime();
+
             for pointer_info in pointer_infos.iter().rev() {
                 match pointer_info.pointerType {
                     PT_TOUCH => {
-                        let (x, y) = convert_to_absolute(
+                        let (x, y) = screen_to_client(
                             hwnd,
                             pointer_info.ptPixelLocationRaw.x,
                             pointer_info.ptPixelLocationRaw.y,
@@ -376,6 +389,10 @@ unsafe extern "system" fn win32_wndproc(
                             POINTER_FLAG_UP => TouchPhase::Ended,
                             POINTER_FLAG_DOWN => TouchPhase::Started,
                             x => panic!("Unsupported touch phase: 0x{:x}", x),
+                        };
+                        let time = {
+                            let freq = get_qpc_frequency();
+                            (pointer_info.PerformanceCount as f64) / freq
                         };
 
                         event_handler.touch_event(
@@ -388,7 +405,7 @@ unsafe extern "system" fn win32_wndproc(
                         );
                     }
                     PT_MOUSE => {
-                        let (x, y) = convert_to_absolute(
+                        let (x, y) = screen_to_client(
                             hwnd,
                             pointer_info.ptPixelLocationRaw.x,
                             pointer_info.ptPixelLocationRaw.y,
